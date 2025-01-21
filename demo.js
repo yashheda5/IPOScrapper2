@@ -40,6 +40,8 @@ async function scrapeAndExtract(url) {
             
             // Price range extraction with better error handling
             let priceRange = '';
+            let lotSize = '';
+            let ipoType = 'IPO';  // Default value
             const priceRangeElement = document.querySelector('.row.ipo-meta .three.columns .value');
             if (priceRangeElement) {
                 const priceText = priceRangeElement.textContent
@@ -50,6 +52,16 @@ async function scrapeAndExtract(url) {
                 const matches = priceText.match(/(₹\d+)\s*–\s*(₹\d+)/);
                 if (matches) {
                     priceRange = `${matches[1]} – ${matches[2]}`;
+                }
+                
+                // Extract lot size and amount
+                const lotSizeText = priceRangeElement.textContent.trim();
+                const lotSizeMatch = lotSizeText.match(/Lot size[^0-9]*(\d+)[^0-9]*₹(\d+)/);
+                if (lotSizeMatch) {
+                    lotSize = lotSizeMatch[1];
+                    // Determine IPO type based on amount
+                    const amount = parseInt(lotSizeMatch[2]);
+                    ipoType = amount > 16000 ? 'SME-IPO' : 'IPO';
                 }
             }
 
@@ -150,6 +162,8 @@ async function scrapeAndExtract(url) {
                 ipoDate,
                 listingDate,
                 priceRange,
+                lotSize,
+                ipoType,
                 issueSize,
                 prospectusLink,
                 ipoSchedule: schedule,
@@ -167,9 +181,12 @@ async function scrapeAndExtract(url) {
 
         await browser.close();
 
-        // Create the response object without validation
+        // Create the response object with the IPO URL
         const jsonResponse = {
-            ipoDetails: result
+            ipoDetails: {
+                ...result,
+                IPOLink: url  // Added the URL to the response
+            }
         };
 
         console.log('Extracted Data:', JSON.stringify(jsonResponse, null, 2));
