@@ -29,7 +29,7 @@ async function scrapeAndExtract(url) {
             ).singleNodeValue?.textContent.trim() || '';
 
             // Basic data extraction with error handling
-            const h1Text = getTextContent('.ten.columns h1') || '';
+            const IPOName = getTextContent('.ten.columns h1').replace(/\s+/g, ' ').trim() || '';
             const logoElement = document.querySelector('.ipo-logo img');
             const logoURL = logoElement ? logoElement.src : '';
 
@@ -66,8 +66,24 @@ async function scrapeAndExtract(url) {
                 }
             });
 
+            // Extract table data from the "Issue size" section
+            const tableData = {};
+            const tableRows = document.querySelectorAll('.mini-container.content table tbody tr');
+            tableRows.forEach((row, index) => {
+                if (index > 0) { // Skip header row
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length === 2) {
+                        const key = cells[0].textContent.trim();
+                        const value = cells[1].textContent.trim();
+                        if (key !== 'Purpose') {
+                            tableData[key] = value;
+                        }
+                    }
+                }
+            });
+
             return {
-                h1Text,
+                IPOName,
                 logoURL,
                 ipoDate,
                 listingDate,
@@ -75,7 +91,8 @@ async function scrapeAndExtract(url) {
                 issueSize,
                 prospectusLink,
                 ipoSchedule: schedule,
-                ipoDescription
+                ipoDescription,
+                issueSizeDetails: tableData
             };
         });
 
@@ -95,7 +112,7 @@ async function scrapeAndExtract(url) {
     }
 }
 
-const url = 'https://zerodha.com/ipo/402509/ema-partners-india/';
+const url = 'https://zerodha.com/ipo/402383/capitalnumbers-infotech/';
 
 scrapeAndExtract(url)
     .then((result) => {
