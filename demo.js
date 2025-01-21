@@ -1,4 +1,5 @@
 const puppeteer = require('puppeteer');
+const readline = require('readline');
 
 async function scrapeAndExtract(url) {
     try {
@@ -82,6 +83,42 @@ async function scrapeAndExtract(url) {
                 }
             });
 
+            // Extract strengths
+            const strengthsListItems = document.evaluate(
+                "//h3[contains(text(), 'Strengths')]/following-sibling::ul/li",
+                document,
+                null,
+                XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+                null
+            );
+            const strengths = [];
+            for (let i = 0; i < strengthsListItems.snapshotLength; i++) {
+                strengths.push(strengthsListItems.snapshotItem(i).textContent.trim());
+            }
+
+            // Extract risks
+            const risksListItems = document.evaluate(
+                "//h2[contains(text(), 'Risks')]/following-sibling::ul/li",
+                document,
+                null,
+                XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+                null
+            );
+            const risks = [];
+            for (let i = 0; i < risksListItems.snapshotLength; i++) {
+                risks.push(risksListItems.snapshotItem(i).textContent.trim());
+            }
+
+            // Extract allotment link
+            const allotmentLinkElement = document.evaluate(
+                "//h2[contains(text(), 'Allotment Status')]/following-sibling::p/a",
+                document,
+                null,
+                XPathResult.FIRST_ORDERED_NODE_TYPE,
+                null
+            ).singleNodeValue;
+            const allotmentLink = allotmentLinkElement ? allotmentLinkElement.href : '';
+
             return {
                 IPOName,
                 logoURL,
@@ -92,7 +129,10 @@ async function scrapeAndExtract(url) {
                 prospectusLink,
                 ipoSchedule: schedule,
                 ipoDescription,
-                issueSizeDetails: tableData
+                issueSizeDetails: tableData,
+                strengths,
+                risks,
+                allotmentLink
             };
         });
 
@@ -112,12 +152,20 @@ async function scrapeAndExtract(url) {
     }
 }
 
-const url = 'https://zerodha.com/ipo/402383/capitalnumbers-infotech/';
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
 
-scrapeAndExtract(url)
-    .then((result) => {
-        console.log('Scraping completed successfully');
-    })
-    .catch((error) => {
-        console.error('Error while scraping:', error);
-    });
+rl.question('Please enter the URL: ', (url) => {
+    scrapeAndExtract(url)
+        .then((result) => {
+            console.log('Scraping completed successfully');
+        })
+        .catch((error) => {
+            console.error('Error while scraping:', error);
+        })
+        .finally(() => {
+            rl.close();
+        });
+});
