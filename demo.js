@@ -61,8 +61,10 @@ async function scrapeAndExtract(url) {
             const scheduleRows = document.querySelectorAll('.ipo-schedule tr');
             scheduleRows.forEach(row => {
                 const label = row.querySelector('.ipo-schedule-label')?.textContent.trim();
-                const date = row.querySelector('.ipo-schedule-date')?.textContent.trim();
+                let date = row.querySelector('.ipo-schedule-date')?.textContent.trim();
                 if (label && date) {
+                    // Remove extra spaces from the date value
+                    date = date.replace(/\s+/g, ' ');
                     schedule[label] = date;
                 }
             });
@@ -119,6 +121,29 @@ async function scrapeAndExtract(url) {
             ).singleNodeValue;
             const allotmentLink = allotmentLinkElement ? allotmentLinkElement.href : '';
 
+            // Extract financial data
+            const financialScript = Array.from(document.querySelectorAll('.mini-container script')).find(script => script.innerText.includes('const data ='));
+            const financialScriptContent = financialScript ? financialScript.innerText : '';
+
+            const dataMatch = financialScriptContent.match(/const data = ({.*?});/s);
+            let dataObject = {};
+            if (dataMatch) {
+                dataObject = JSON.parse(dataMatch[1].replace(/(\w+):/g, '"$1":').replace(/'/g, '"'));
+            }
+
+            // Extract labels and datasets
+            const labels = dataObject.labels;
+            const datasets = dataObject.datasets.map(dataset => ({
+                label: dataset.label,
+                data: dataset.data
+            }));
+
+            // Format the financial data as requested
+            let formattedFinancialData = {};
+            datasets.forEach(dataset => {
+                formattedFinancialData[dataset.label] = dataset.data;
+            });
+
             return {
                 IPOName,
                 logoURL,
@@ -132,7 +157,11 @@ async function scrapeAndExtract(url) {
                 issueSizeDetails: tableData,
                 strengths,
                 risks,
-                allotmentLink
+                allotmentLink,
+                financialData: {
+                    labels,
+                    ...formattedFinancialData
+                }
             };
         });
 
