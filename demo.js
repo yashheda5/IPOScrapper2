@@ -83,29 +83,19 @@ async function scrapeAndExtract(url) {
                 }
             });
 
+            // Extracting Strengths (second h2 in mini-container)
             const strengths = [];
-            const strengthsListItems = document.evaluate(
-                "//h3[contains(text(), 'Strengths')]/following-sibling::ul/li",
-                document,
-                null,
-                XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
-                null
-            );
-            for (let i = 0; i < strengthsListItems.snapshotLength; i++) {
-                strengths.push(strengthsListItems.snapshotItem(i).textContent.trim());
-            }
+            const strengthsElements = document.querySelectorAll('.mini-container h2:nth-of-type(2) + ul li');
+            strengthsElements.forEach((item) => {
+                strengths.push(item.textContent.trim());
+            });
 
+            // Extracting Risks (third h2 in mini-container)
             const risks = [];
-            const risksListItems = document.evaluate(
-                "//h2[contains(text(), 'Risks')]/following-sibling::ul/li",
-                document,
-                null,
-                XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
-                null
-            );
-            for (let i = 0; i < risksListItems.snapshotLength; i++) {
-                risks.push(risksListItems.snapshotItem(i).textContent.trim());
-            }
+            const risksElements = document.querySelectorAll('.mini-container h2:nth-of-type(3) + ul li');
+            risksElements.forEach((item) => {
+                risks.push(item.textContent.trim());
+            });
 
             const allotmentLink = document.evaluate(
                 "//h2[contains(text(), 'Allotment Status')]/following-sibling::p/a",
@@ -128,7 +118,7 @@ async function scrapeAndExtract(url) {
                 ipoSchedule: schedule,
                 ipoDescription,
                 issueSizeDetails: tableData,
-                strengths,
+                strengths, // Added strengths data
                 risks,
                 allotmentLink
             };
@@ -137,10 +127,8 @@ async function scrapeAndExtract(url) {
         await browser.close();
 
         const jsonResponse = {
-          
-                ...result,
-                IPOLink: url
-            
+            ...result,
+            IPOLink: url
         };
 
         console.log('Extracted Data:', JSON.stringify(jsonResponse, null, 2));
@@ -149,7 +137,7 @@ async function scrapeAndExtract(url) {
             const response = await axios.post("http://localhost:3000/api/upload-ipo", jsonResponse, {
                 headers: { "Content-Type": "application/json" }
             });
-            console.log(response.data,"Data successfully sent to the server:" );
+            console.log(response.data, "Data successfully sent to the server:");
         } catch (postError) {
             console.error("Error sending data to the server:", postError.message);
         }

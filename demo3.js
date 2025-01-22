@@ -1,7 +1,7 @@
 const puppeteer = require('puppeteer');
 
 (async () => {
-  const url = 'https://zerodha.com/ipo/402383/capitalnumbers-infotech/';
+  const url = 'https://zerodha.com/ipo/402509/ema-partners-india/';
 
   const browser = await puppeteer.launch();
   const page = await browser.newPage();
