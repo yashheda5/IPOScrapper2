@@ -1,66 +1,139 @@
 const puppeteer = require('puppeteer');
 const readline = require('readline');
-const axios = require('axios'); // Ensure axios is imported
+const axios = require('axios');
 
 async function scrapeAndExtract(url) {
+    let browser;
+    console.log('\nStarting scraping process...');
+
     try {
-        const browser = await puppeteer.launch({
-            headless: "new", // Ensure your Puppeteer version supports "new"
+        browser = await puppeteer.launch({
+            headless: "new",
             args: ['--no-sandbox']
         });
         const page = await browser.newPage();
 
-        // Navigate to the page and wait for content to load
-        await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
+        await page.goto(url, { 
+            waitUntil: 'networkidle0', 
+            timeout: 60000 
+        });
 
+        console.log('Page loaded successfully, extracting data...');
+
+        // Extract financial data
+        const financialData = await page.evaluate(() => {
+            try {
+                const container = document.querySelector('.mini-container');
+                const script = Array.from(container.querySelectorAll('script'))
+                    .find(script => script.innerText.includes('const data ='));
+                
+                if (!script) return null;
+
+                const dataMatch = script.innerText.match(/const data = ({.*?});/s);
+                if (!dataMatch) return null;
+
+                const dataObject = JSON.parse(
+                    dataMatch[1]
+                        .replace(/(\w+):/g, '"$1":')
+                        .replace(/'/g, '"')
+                );
+
+                return {
+                    labels: dataObject.labels || [],
+                    datasets: dataObject.datasets.map(dataset => ({
+                        label: dataset.label,
+                        data: dataset.data
+                    }))
+                };
+            } catch (e) {
+                console.error('Error parsing financial data:', e);
+                return null;
+            }
+        });
+
+        // Extract IPO details
         const result = await page.evaluate(() => {
-            // Helper function to safely get text content
-            const getTextContent = (selector) => {
+            // Utility functions
+            const getText = (selector) => {
                 const element = document.querySelector(selector);
                 return element ? element.textContent.trim() : '';
             };
 
-            // Get IPO description
-            const ipoDescription = document.evaluate(
-                "//h2[contains(text(), 'About')]/following-sibling::p",
-                document,
-                null,
-                XPathResult.FIRST_ORDERED_NODE_TYPE,
-                null
-            ).singleNodeValue?.textContent.trim() || '';
+            const getXPathText = (xpath) => {
+                const element = document.evaluate(
+                    xpath,
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
+                return element ? element.textContent.trim() : '';
+            };
 
-            const IPOName = getTextContent('.ten.columns h1').replace(/\s+/g, ' ').trim() || '';
-            const logoElement = document.querySelector('.ipo-logo img');
-            const logoURL = logoElement ? logoElement.src : '';
+            // Function to get list items after a heading
+            const getListItemsAfterHeading = (headingText) => {
+                const xpathQuery = `//h2[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '${headingText.toLowerCase()}')]|//h3[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '${headingText.toLowerCase()}')]`;
+                
+                const headingElement = document.evaluate(
+                    xpathQuery,
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null
+                ).singleNodeValue;
 
-            const ipoDate = getTextContent('.row.ipo-meta .four.columns:nth-child(1) .value');
-            const listingDate = getTextContent('.row.ipo-meta .four.columns:nth-child(2) .value');
+                if (!headingElement) return [];
 
-            let priceRange = '';
-            let lotSize = '';
-            let ipoType = 'IPO';
-            const priceRangeElement = document.querySelector('.row.ipo-meta .three.columns .value');
-            if (priceRangeElement) {
-                const priceText = priceRangeElement.textContent.trim();
-                const matches = priceText.match(/(₹\d+)\s*–\s*(₹\d+)/);
-                if (matches) {
-                    priceRange = `${matches[1]} – ${matches[2]}`;
+                let nextElement = headingElement.nextElementSibling;
+                while (nextElement && nextElement.tagName.toLowerCase() !== 'ul') {
+                    nextElement = nextElement.nextElementSibling;
                 }
 
-                const lotSizeMatch = priceText.match(/Lot size[^0-9]*(\d+)[^0-9]*₹(\d+)/);
-                if (lotSizeMatch) {
-                    lotSize = lotSizeMatch[1];
-                    const amount = parseInt(lotSizeMatch[2]);
-                    ipoType = amount > 16000 ? 'SME-IPO' : 'IPO';
+                if (nextElement && nextElement.tagName.toLowerCase() === 'ul') {
+                    return Array.from(nextElement.querySelectorAll('li'))
+                        .map(li => li.textContent.trim())
+                        .filter(text => text.length > 0);
                 }
-            }
 
-            const issueSize = getTextContent('.row.ipo-meta .two.columns .value');
-            const prospectusLink = document.querySelector('.six.columns.text-right a')?.href || '';
+                return [];
+            };
 
+            // Function to get allotment link
+            const getAllotmentLink = () => {
+                const allotmentStatusH2 = document.querySelector('.mini-container h2:has(b), .mini-container h2:has(strong)');
+                if (!allotmentStatusH2) return '';
+                
+                const allotmentAnchor = allotmentStatusH2.nextElementSibling?.querySelector('a');
+                return allotmentAnchor ? allotmentAnchor.href : '';
+            };
+
+            // Basic IPO Information
+            const basicInfo = {
+                IPOName: getText('.ten.columns h1').replace(/\s+/g, ' ').trim(),
+                logoURL: document.querySelector('.ipo-logo img')?.src || '',
+                ipoDate: getText('.row.ipo-meta .four.columns:nth-child(1) .value'),
+                listingDate: getText('.row.ipo-meta .four.columns:nth-child(2) .value')
+            };
+
+            // Price and Size Information
+            const priceElement = document.querySelector('.row.ipo-meta .three.columns .value');
+            const priceInfo = (() => {
+                if (!priceElement) return {};
+                
+                const priceText = priceElement.textContent.trim();
+                const priceMatch = priceText.match(/(₹\d+)\s*–\s*(₹\d+)/);
+                const lotMatch = priceText.match(/Lot size[^0-9]*(\d+)[^0-9]*₹(\d+)/);
+                
+                return {
+                    priceRange: priceMatch ? `${priceMatch[1]} – ${priceMatch[2]}` : '',
+                    lotSize: lotMatch ? lotMatch[1] : '',
+                    ipoType: lotMatch && parseInt(lotMatch[2]) > 16000 ? 'SME-IPO' : 'IPO'
+                };
+            })();
+
+            // Schedule Information
             const schedule = {};
-            const scheduleRows = document.querySelectorAll('.ipo-schedule tr');
-            scheduleRows.forEach(row => {
+            document.querySelectorAll('.ipo-schedule tr').forEach(row => {
                 const label = row.querySelector('.ipo-schedule-label')?.textContent.trim();
                 const date = row.querySelector('.ipo-schedule-date')?.textContent.trim();
                 if (label && date) {
@@ -68,101 +141,107 @@ async function scrapeAndExtract(url) {
                 }
             });
 
-            const tableData = {};
-            const tableRows = document.querySelectorAll('.mini-container.content table tbody tr');
-            tableRows.forEach((row, index) => {
+            // Issue Size Details
+            const issueSize = {};
+            document.querySelectorAll('.mini-container.content table tbody tr').forEach((row, index) => {
                 if (index > 0) {
                     const cells = row.querySelectorAll('td');
                     if (cells.length === 2) {
                         const key = cells[0].textContent.trim();
                         const value = cells[1].textContent.trim();
                         if (key !== 'Purpose') {
-                            tableData[key] = value;
+                            issueSize[key] = value;
                         }
                     }
                 }
             });
 
-            // Extracting Strengths (second h2 in mini-container)
-            const strengths = [];
-            const strengthsElements = document.querySelectorAll('.mini-container h2:nth-of-type(2) + ul li');
-            strengthsElements.forEach((item) => {
-                strengths.push(item.textContent.trim());
-            });
-
-            // Extracting Risks (third h2 in mini-container)
-            const risks = [];
-            const risksElements = document.querySelectorAll('.mini-container h2:nth-of-type(3) + ul li');
-            risksElements.forEach((item) => {
-                risks.push(item.textContent.trim());
-            });
-
-            const allotmentLink = document.evaluate(
-                "//h2[contains(text(), 'Allotment Status')]/following-sibling::p/a",
-                document,
-                null,
-                XPathResult.FIRST_ORDERED_NODE_TYPE,
-                null
-            ).singleNodeValue?.href || '';
-
             return {
-                IPOName,
-                logoURL,
-                ipoDate,
-                listingDate,
-                priceRange,
-                lotSize,
-                ipoType,
-                issueSize,
-                prospectusLink,
+                ...basicInfo,
+                ...priceInfo,
+                issueSize: getText('.row.ipo-meta .two.columns .value'),
+                prospectusLink: document.querySelector('.six.columns.text-right a')?.href || '',
                 ipoSchedule: schedule,
-                ipoDescription,
-                issueSizeDetails: tableData,
-                strengths, // Added strengths data
-                risks,
-                allotmentLink
+                ipoDescription: getXPathText("//h2[contains(text(), 'About')]/following-sibling::p"),
+                issueSizeDetails: issueSize,
+                strengths: getListItemsAfterHeading('strengths'),
+                risks: getListItemsAfterHeading('risks'),
+                allotmentLink: getAllotmentLink()
             };
         });
 
-        await browser.close();
+        // Transform financial data for API
+        const transformedFinancialData = {
+            labels: financialData?.labels || [],
+            TotalAssets: financialData?.datasets.find(d => d.label === "Total Assets")?.data || [],
+            Revenue: financialData?.datasets.find(d => d.label === "Revenue")?.data || [],
+            ProfitAfterTax: financialData?.datasets.find(d => d.label === "Profit After Tax")?.data || []
+        };
 
-        const jsonResponse = {
+        // Prepare final response
+        const finalResponse = {
             ...result,
+            financialData: transformedFinancialData,
             IPOLink: url
         };
 
-        console.log('Extracted Data:', JSON.stringify(jsonResponse, null, 2));
+        console.log('\n=== Scraped Data ===');
+        console.log(JSON.stringify(finalResponse, null, 2));
 
+        // Send data to server
         try {
-            const response = await axios.post("http://localhost:3000/api/upload-ipo", jsonResponse, {
-                headers: { "Content-Type": "application/json" }
-            });
-            console.log(response.data, "Data successfully sent to the server:");
+            console.log('\nSending data to server...');
+            const response = await axios.post(
+                "http://localhost:3000/api/upload-ipo", 
+                finalResponse, 
+                { headers: { "Content-Type": "application/json" }}
+            );
+            
+            console.log('\n=== Server Response ===');
+            console.log(JSON.stringify(response.data, null, 2));
+            
+            console.log('\n=== Database Status ===');
+            if (response.data._id) {
+                console.log('✅ Successfully added to database with ID:', response.data._id);
+            } else {
+                console.log('❌ Failed to add to database - No ID returned');
+            }
         } catch (postError) {
-            console.error("Error sending data to the server:", postError.message);
+            console.error("\n=== Server Error ===");
+            console.error("❌ Failed to send data to server:", postError.message);
+            throw postError;
         }
 
-        return jsonResponse;
+        return finalResponse;
     } catch (error) {
-        console.error('Scraping Error:', error);
+        console.error('\n=== Scraping Error ===');
+        console.error('❌ Error during scraping:', error);
         throw error;
+    } finally {
+        if (browser) {
+            await browser.close();
+            console.log('\nBrowser closed successfully');
+        }
     }
 }
 
+// Setup CLI interface
 const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
 });
 
-rl.question('Please enter the URL: ', (url) => {
-    scrapeAndExtract(url)
-        .then(() => {
-            console.log('Scraping completed successfully');
-        })
-        .catch((error) => {
-            console.error('Error while scraping:', error);
-        })
-        .finally(() => {
-            rl.close();
-        });
+// Run the scraper
+rl.question('Please enter the IPO URL: ', async (url) => {
+    try {
+        await scrapeAndExtract(url);
+        console.log('\n=== Final Status ===');
+        console.log('✅ Scraping process completed successfully');
+    } catch (error) {
+        console.log('\n=== Final Status ===');
+        console.log('❌ Scraping process failed');
+        console.error('Error details:', error.message);
+    } finally {
+        rl.close();
+    }
 });
