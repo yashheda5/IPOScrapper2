@@ -7,7 +7,7 @@ const puppeteer = require('puppeteer');
     const page = await browser.newPage();
 
     // Go to the target URL
-    await page.goto('https://zerodha.com/ipo/402509/ema-partners-india/');
+    await page.goto('https://zerodha.com/ipo/401208/indobell-insulation/');
 
     // Get the entire HTML content of the page
     const pageContent = await page.content();

@@ -135,15 +135,17 @@ async function scrapeAndExtract(url) {
             const priceElement = document.querySelector('.row.ipo-meta .three.columns .value');
             const priceInfo = (() => {
                 if (!priceElement) return {};
-                
+            
                 const priceText = priceElement.textContent.trim();
                 const priceMatch = priceText.match(/(₹\d+)\s*–\s*(₹\d+)/);
+                const singlePriceMatch = priceText.match(/₹(\d+)/);
                 const lotMatch = priceText.match(/Lot size[^0-9]*(\d+)[^0-9]*₹(\d+)/);
-                
+                const separateLotMatch = priceText.match(/₹(\d+)\s*Lot size\s*(\d+)/);
+            
                 return {
-                    priceRange: priceMatch ? `${priceMatch[1]} – ${priceMatch[2]}` : '',
-                    lotSize: lotMatch ? lotMatch[1] : '',
-                    ipoType: lotMatch && parseInt(lotMatch[2]) > 16000 ? 'SME-IPO' : 'IPO'
+                    priceRange: priceMatch ? `${priceMatch[1]} – ${priceMatch[2]}` : (singlePriceMatch ? `₹${singlePriceMatch[1]}` : ''),
+                    lotSize: lotMatch ? lotMatch[1] : (separateLotMatch ? separateLotMatch[2] : ''),
+                    ipoType: (lotMatch && parseInt(lotMatch[2]) > 16000) || (separateLotMatch && parseInt(separateLotMatch[1]) > 16000) ? 'SME-IPO' : 'IPO'
                 };
             })();
 
@@ -208,6 +210,10 @@ async function scrapeAndExtract(url) {
         console.log('\n=== Scraped Data ===');
         console.log(JSON.stringify(finalResponse, null, 2));
 
+        // Print JSON format for Postman
+        console.log('\n=== JSON Format for Postman ===');
+        console.log(JSON.stringify(finalResponse));
+
         // Send data to server
         try {
             console.log('\nSending data to server...');
@@ -250,7 +256,6 @@ const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
 });
-
 // Run the scraper
 rl.question('Please enter the IPO URL: ', async (url) => {
     try {
