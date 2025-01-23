@@ -1,6 +1,12 @@
 const puppeteer = require('puppeteer');
 const readline = require('readline');
 const axios = require('axios');
+const fs = require('fs').promises;
+
+async function downloadImage(url) {
+    const response = await axios.get(url, { responseType: 'arraybuffer' });
+    return Buffer.from(response.data, 'binary').toString('base64');
+}
 
 async function scrapeAndExtract(url) {
     let browser;
@@ -100,12 +106,22 @@ async function scrapeAndExtract(url) {
 
             // Function to get allotment link
             const getAllotmentLink = () => {
-                const allotmentStatusH2 = document.querySelector('.mini-container h2:has(b), .mini-container h2:has(strong)');
-                if (!allotmentStatusH2) return '';
-                
-                const allotmentAnchor = allotmentStatusH2.nextElementSibling?.querySelector('a');
-                return allotmentAnchor ? allotmentAnchor.href : '';
+                // Find all <h2> elements within the container
+                const headings = document.querySelectorAll('.mini-container h2');
+            
+                // Loop through the headings to find the one containing "Allotment Status"
+                for (const heading of headings) {
+                    if (heading.textContent.includes("Allotment Status")) {
+                        // Find the next sibling paragraph and look for the <a> tag
+                        const allotmentAnchor = heading.nextElementSibling?.querySelector('a');
+                        return allotmentAnchor ? allotmentAnchor.href : '';
+                    }
+                }
+            
+                // Return empty string if no matching heading or link is found
+                return '';
             };
+            const allotmentLink = getAllotmentLink();
 
             // Basic IPO Information
             const basicInfo = {
@@ -166,7 +182,7 @@ async function scrapeAndExtract(url) {
                 issueSizeDetails: issueSize,
                 strengths: getListItemsAfterHeading('strengths'),
                 risks: getListItemsAfterHeading('risks'),
-                allotmentLink: getAllotmentLink()
+                allotmentLink: allotmentLink
             };
         });
 
@@ -178,9 +194,13 @@ async function scrapeAndExtract(url) {
             ProfitAfterTax: financialData?.datasets.find(d => d.label === "Profit After Tax")?.data || []
         };
 
+        // Download and convert logo image to base64
+        const logoBase64 = result.logoURL ? await downloadImage(result.logoURL) : '';
+
         // Prepare final response
         const finalResponse = {
             ...result,
+            logoBase64,
             financialData: transformedFinancialData,
             IPOLink: url
         };
