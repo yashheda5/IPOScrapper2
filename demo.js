@@ -76,6 +76,21 @@ async function scrapeAndExtract(url) {
                 return element ? element.textContent.trim() : '';
             };
 
+            // Function to clean IPO name
+            const cleanIpoName = (name) => {
+                // Remove multiple spaces and trim
+                let cleanedName = name.replace(/\s+/g, ' ').trim();
+                
+                // Define words to remove (case insensitive)
+                const wordsToRemove = ['closed', 'live', 'upcoming'];
+                
+                // Create regex pattern to match these words at the end of the string
+                const pattern = new RegExp(`\\s*(${wordsToRemove.join('|')})\\s*$`, 'i');
+                
+                // Remove matching words from the end
+                return cleanedName.replace(pattern, '').trim();
+            };
+
             // Function to get list items after a heading
             const getListItemsAfterHeading = (headingText) => {
                 const xpathQuery = `//h2[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '${headingText.toLowerCase()}')]|//h3[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '${headingText.toLowerCase()}')]`;
@@ -106,26 +121,22 @@ async function scrapeAndExtract(url) {
 
             // Function to get allotment link
             const getAllotmentLink = () => {
-                // Find all <h2> elements within the container
                 const headings = document.querySelectorAll('.mini-container h2');
             
-                // Loop through the headings to find the one containing "Allotment Status"
                 for (const heading of headings) {
                     if (heading.textContent.includes("Allotment Status")) {
-                        // Find the next sibling paragraph and look for the <a> tag
                         const allotmentAnchor = heading.nextElementSibling?.querySelector('a');
                         return allotmentAnchor ? allotmentAnchor.href : '';
                     }
                 }
             
-                // Return empty string if no matching heading or link is found
                 return '';
             };
             const allotmentLink = getAllotmentLink();
 
-            // Basic IPO Information
+            // Basic IPO Information with cleaned name
             const basicInfo = {
-                IPOName: getText('.ten.columns h1').replace(/\s+/g, ' ').trim(),
+                IPOName: cleanIpoName(getText('.ten.columns h1')),
                 logoURL: document.querySelector('.ipo-logo img')?.src || '',
                 ipoDate: getText('.row.ipo-meta .four.columns:nth-child(1) .value'),
                 listingDate: getText('.row.ipo-meta .four.columns:nth-child(2) .value')
@@ -256,6 +267,7 @@ const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
 });
+
 // Run the scraper
 rl.question('Please enter the IPO URL: ', async (url) => {
     try {
